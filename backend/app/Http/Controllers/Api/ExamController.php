@@ -146,6 +146,8 @@ class ExamController extends Controller
         $record->update([
             'end_time' => now(),
             'score' => $totalScore,
+            'original_score' => $totalScore,
+            'penalty_score' => 0,
             'status' => 'graded',
         ]);
 
@@ -159,6 +161,12 @@ class ExamController extends Controller
     public function myRecords(Request $request)
     {
         $records = ExamRecord::with('examPaper')
+            ->withCount([
+                'proctoringEvents',
+                'appeals as pending_appeals_count' => function ($q) {
+                    $q->where('status', \App\Models\Appeal::STATUS_PENDING);
+                },
+            ])
             ->where('user_id', $request->user()->id)
             ->orderBy('id', 'desc')
             ->paginate($perPage = $request->input('per_page', 15));

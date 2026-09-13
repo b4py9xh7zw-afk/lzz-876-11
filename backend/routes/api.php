@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\AppealController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ExamController;
 use App\Http\Controllers\Api\ExamPaperController;
+use App\Http\Controllers\Api\ProctoringController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\ScoreController;
 use Illuminate\Support\Facades\Route;
@@ -51,5 +53,20 @@ Route::middleware(['api', 'auth:sanctum', 'throttle:60,1'])->group(function () {
         Route::get('/statistics', [ScoreController::class, 'statistics']);
         Route::get('/ranking/{examPaper}', [ScoreController::class, 'ranking']);
         Route::get('/analysis/{examPaper}', [ScoreController::class, 'analysis']);
+    });
+
+    Route::prefix('proctoring')->group(function () {
+        Route::post('/events', [ProctoringController::class, 'store']);
+        Route::get('/records', [ProctoringController::class, 'records']);
+        Route::get('/records/{record}/events', [ProctoringController::class, 'events']);
+        Route::post('/records/{record}/penalty', [ProctoringController::class, 'updatePenalty']);
+        Route::post('/events/{event}/review', [ProctoringController::class, 'reviewEvent']);
+    });
+
+    Route::prefix('appeals')->group(function () {
+        Route::get('/', [AppealController::class, 'index']);
+        Route::post('/events/{event}', [AppealController::class, 'store']);
+        Route::post('/{appeal}/review', [AppealController::class, 'review']);
+        Route::get('/{appeal}/screenshot', [AppealController::class, 'screenshot']);
     });
 });

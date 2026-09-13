@@ -47,9 +47,7 @@ services:
           table_exists=$$(mysql -h db -uroot -proot -Nse "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='exam_system' AND table_name='users';")
           if [ "$$table_exists" = "1" ]; then
             echo "Database already initialized, skip seed."
-            exit 0
-          fi
-
+          else
           mysql -h db -uroot -proot exam_system <<'SQL'
           SET NAMES utf8mb4;
           SET CHARACTER SET utf8mb4;
@@ -192,7 +190,9 @@ services:
               exam_paper_id BIGINT UNSIGNED NOT NULL COMMENT '试卷ID',
               start_time TIMESTAMP NOT NULL COMMENT '开始时间',
               end_time TIMESTAMP NULL COMMENT '提交时间',
-              score DECIMAL(5,2) DEFAULT 0.00 COMMENT '得分',
+              score DECIMAL(5,2) DEFAULT 0.00 COMMENT '生效得分(原始分-扣分)',
+              original_score DECIMAL(5,2) NULL COMMENT '卷面原始分',
+              penalty_score DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '违规扣分',
               status ENUM('in_progress', 'submitted', 'graded') DEFAULT 'in_progress' COMMENT '状态',
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -214,6 +214,44 @@ services:
               INDEX idx_question_id (question_id)
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考生答案表';
 
+          CREATE TABLE IF NOT EXISTS proctoring_events (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '考生ID',
+              event_type ENUM('tab_switch', 'camera_disconnect', 'idle_timeout', 'network_recovery') NOT NULL COMMENT '事件类型: tab_switch-切屏 camera_disconnect-摄像头断开 idle_timeout-长时间不操作 network_recovery-网络恢复',
+              event_data JSON NULL COMMENT '事件附加数据(JSON)',
+              occurred_at TIMESTAMP NOT NULL COMMENT '发生时间',
+              status ENUM('pending', 'confirmed', 'dismissed') DEFAULT 'pending' COMMENT '复核状态: pending-待复核 confirmed-确认违规 dismissed-已排除',
+              reviewed_by BIGINT UNSIGNED NULL COMMENT '复核人ID',
+              reviewed_at TIMESTAMP NULL COMMENT '复核时间',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_exam_record_id (exam_record_id),
+              INDEX idx_user_id (user_id),
+              INDEX idx_event_type (event_type),
+              INDEX idx_status (status),
+              INDEX idx_occurred_at (occurred_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='监考异常事件表';
+
+          CREATE TABLE IF NOT EXISTS appeals (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              proctoring_event_id BIGINT UNSIGNED NOT NULL COMMENT '监考事件ID',
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '申诉人ID',
+              reason TEXT NOT NULL COMMENT '申诉说明',
+              screenshot_path VARCHAR(255) NULL COMMENT '申诉截图存储路径',
+              status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending' COMMENT '状态: pending-待复核 approved-申诉成立 rejected-申诉驳回',
+              review_comment TEXT NULL COMMENT '复核意见',
+              reviewed_by BIGINT UNSIGNED NULL COMMENT '复核人ID',
+              reviewed_at TIMESTAMP NULL COMMENT '复核时间',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_proctoring_event_id (proctoring_event_id),
+              INDEX idx_exam_record_id (exam_record_id),
+              INDEX idx_user_id (user_id),
+              INDEX idx_status (status)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异常申诉表';
+
           CREATE TABLE IF NOT EXISTS cache (
               `key` VARCHAR(255) NOT NULL PRIMARY KEY,
               `value` MEDIUMTEXT NOT NULL,
@@ -229,6 +267,62 @@ services:
           SQL
 
           echo "Database initialized from inline schema."
+          fi
+
+          # 幂等迁移：无论是否新初始化，都确保监考回放/申诉相关结构存在（兼容旧数据卷升级）
+          mysql -h db -uroot -proot exam_system <<'SQL'
+          SET NAMES utf8mb4;
+
+          CREATE TABLE IF NOT EXISTS proctoring_events (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '考生ID',
+              event_type ENUM('tab_switch', 'camera_disconnect', 'idle_timeout', 'network_recovery') NOT NULL COMMENT '事件类型',
+              event_data JSON NULL COMMENT '事件附加数据(JSON)',
+              occurred_at TIMESTAMP NOT NULL COMMENT '发生时间',
+              status ENUM('pending', 'confirmed', 'dismissed') DEFAULT 'pending' COMMENT '复核状态',
+              reviewed_by BIGINT UNSIGNED NULL COMMENT '复核人ID',
+              reviewed_at TIMESTAMP NULL COMMENT '复核时间',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_exam_record_id (exam_record_id),
+              INDEX idx_user_id (user_id),
+              INDEX idx_event_type (event_type),
+              INDEX idx_status (status),
+              INDEX idx_occurred_at (occurred_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='监考异常事件表';
+
+          CREATE TABLE IF NOT EXISTS appeals (
+              id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+              proctoring_event_id BIGINT UNSIGNED NOT NULL COMMENT '监考事件ID',
+              exam_record_id BIGINT UNSIGNED NOT NULL COMMENT '考试记录ID',
+              user_id BIGINT UNSIGNED NOT NULL COMMENT '申诉人ID',
+              reason TEXT NOT NULL COMMENT '申诉说明',
+              screenshot_path VARCHAR(255) NULL COMMENT '申诉截图存储路径',
+              status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending' COMMENT '状态',
+              review_comment TEXT NULL COMMENT '复核意见',
+              reviewed_by BIGINT UNSIGNED NULL COMMENT '复核人ID',
+              reviewed_at TIMESTAMP NULL COMMENT '复核时间',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_proctoring_event_id (proctoring_event_id),
+              INDEX idx_exam_record_id (exam_record_id),
+              INDEX idx_user_id (user_id),
+              INDEX idx_status (status)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异常申诉表';
+
+          SET @col_exists := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='exam_system' AND TABLE_NAME='exam_records' AND COLUMN_NAME='original_score');
+          SET @stmt := IF(@col_exists = 0, 'ALTER TABLE exam_records ADD COLUMN original_score DECIMAL(5,2) NULL COMMENT ''卷面原始分'' AFTER score', 'SELECT 1');
+          PREPARE s FROM @stmt; EXECUTE s; DEALLOCATE PREPARE s;
+
+          SET @col_exists := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='exam_system' AND TABLE_NAME='exam_records' AND COLUMN_NAME='penalty_score');
+          SET @stmt := IF(@col_exists = 0, 'ALTER TABLE exam_records ADD COLUMN penalty_score DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT ''违规扣分'' AFTER original_score', 'SELECT 1');
+          PREPARE s FROM @stmt; EXECUTE s; DEALLOCATE PREPARE s;
+
+          UPDATE exam_records SET original_score = score WHERE original_score IS NULL AND status = 'graded';
+          SQL
+
+          echo "Schema migration check done."
     networks:
       - exam-network
 

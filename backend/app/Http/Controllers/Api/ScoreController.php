@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Appeal;
 use App\Models\ExamPaper;
 use App\Models\ExamRecord;
+use App\Models\ProctoringEvent;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +40,13 @@ class ScoreController extends Controller
             ->limit(10)
             ->get();
 
+        $proctoringStats = [
+            'total_events' => ProctoringEvent::count(),
+            'pending_events' => ProctoringEvent::where('status', ProctoringEvent::STATUS_PENDING)->count(),
+            'confirmed_events' => ProctoringEvent::where('status', ProctoringEvent::STATUS_CONFIRMED)->count(),
+            'pending_appeals' => Appeal::where('status', Appeal::STATUS_PENDING)->count(),
+        ];
+
         return response()->json([
             'statistics' => [
                 'total_users' => $totalUsers,
@@ -46,6 +55,7 @@ class ScoreController extends Controller
                 'avg_score' => round($avgScore, 2),
                 'pass_rate' => round($passRate, 2),
             ],
+            'proctoring' => $proctoringStats,
             'recent_records' => $recentRecords,
         ]);
     }

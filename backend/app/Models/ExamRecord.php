@@ -15,6 +15,8 @@ class ExamRecord extends Model
         'start_time',
         'end_time',
         'score',
+        'original_score',
+        'penalty_score',
         'status',
     ];
 
@@ -24,6 +26,8 @@ class ExamRecord extends Model
         'start_time' => 'datetime',
         'end_time' => 'datetime',
         'score' => 'decimal:2',
+        'original_score' => 'decimal:2',
+        'penalty_score' => 'decimal:2',
         'status' => 'string',
     ];
 
@@ -50,5 +54,32 @@ class ExamRecord extends Model
     public function answers()
     {
         return $this->hasMany(ExamRecordAnswer::class, 'exam_record_id');
+    }
+
+    public function proctoringEvents()
+    {
+        return $this->hasMany(ProctoringEvent::class, 'exam_record_id');
+    }
+
+    public function appeals()
+    {
+        return $this->hasMany(Appeal::class, 'exam_record_id');
+    }
+
+    /**
+     * 应用违规扣分并联动生效分数。
+     * score 始终为生效分（original_score - penalty_score），
+     * 成绩统计基于 score，改判后统计自动跟随。
+     */
+    public function applyPenalty(float $penalty): void
+    {
+        $original = (float) ($this->original_score ?? $this->score ?? 0);
+        $penalty = max(0, min(round($penalty, 2), $original));
+
+        $this->update([
+            'original_score' => $original,
+            'penalty_score' => $penalty,
+            'score' => max(0, round($original - $penalty, 2)),
+        ]);
     }
 }

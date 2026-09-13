@@ -64,6 +64,31 @@
     
     <div class="card-base p-6">
       <h3 class="text-lg font-bold text-gray-900 mb-6 flex items-center">
+        <span class="w-1.5 h-6 bg-red-500 rounded-full mr-3 shadow-sm shadow-red-300"></span>
+        监考与申诉
+      </h3>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-gray-50 rounded-xl p-4">
+          <div class="text-sm text-gray-500">异常事件总数</div>
+          <div class="text-2xl font-bold text-gray-900 mt-1">{{ proctoring.total_events }}</div>
+        </div>
+        <div class="bg-yellow-50 rounded-xl p-4">
+          <div class="text-sm text-yellow-700">待复核事件</div>
+          <div class="text-2xl font-bold text-yellow-800 mt-1">{{ proctoring.pending_events }}</div>
+        </div>
+        <div class="bg-red-50 rounded-xl p-4">
+          <div class="text-sm text-red-700">确认违规</div>
+          <div class="text-2xl font-bold text-red-800 mt-1">{{ proctoring.confirmed_events }}</div>
+        </div>
+        <div class="bg-blue-50 rounded-xl p-4">
+          <div class="text-sm text-blue-700">待处理申诉</div>
+          <div class="text-2xl font-bold text-blue-800 mt-1">{{ proctoring.pending_appeals }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-base p-6">
+      <h3 class="text-lg font-bold text-gray-900 mb-6 flex items-center">
         <span class="w-1.5 h-6 bg-indigo-500 rounded-full mr-3 shadow-sm shadow-indigo-300"></span>
         最近考试记录
       </h3>
@@ -120,6 +145,12 @@ const statistics = ref({
   total_records: 0,
   avg_score: 0
 })
+const proctoring = ref({
+  total_events: 0,
+  pending_events: 0,
+  confirmed_events: 0,
+  pending_appeals: 0
+})
 const recentRecords = ref([])
 
 const getScoreClass = (score) => {
@@ -143,6 +174,7 @@ onMounted(async () => {
   try {
     const response = await api.get('/scores/statistics')
     statistics.value = response.data.statistics
+    proctoring.value = response.data.proctoring || proctoring.value
     recentRecords.value = response.data.recent_records
   } catch (e) {
     console.error('Failed to fetch statistics:', e)

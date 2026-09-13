@@ -57,6 +57,21 @@
         </button>
       </div>
     </div>
+
+    <!-- 监考摄像头预览小窗 -->
+    <div v-if="proctoringActive" class="fixed bottom-4 right-4 z-40 w-44 select-none">
+      <div class="bg-gray-900 rounded-lg overflow-hidden shadow-lg border-2" :class="cameraActive ? 'border-green-500' : 'border-red-500'">
+        <video ref="videoEl" autoplay playsinline muted class="w-full h-28 object-cover bg-gray-800"></video>
+        <div class="flex items-center justify-between px-2 py-1.5">
+          <span class="flex items-center text-xs text-white">
+            <span class="w-2 h-2 rounded-full mr-1.5" :class="cameraActive ? 'bg-green-400 animate-pulse' : 'bg-red-400'"></span>
+            {{ cameraActive ? '监考中' : '摄像头断开' }}
+          </span>
+          <span v-if="eventCount > 0" class="text-xs text-yellow-300">{{ eventCount }} 条异常</span>
+        </div>
+      </div>
+      <p v-if="cameraError" class="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1">{{ cameraError }}</p>
+    </div>
   </div>
 </template>
 
@@ -65,6 +80,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../api'
 import { useModal } from '../../composables/useModal'
+import { useProctoring } from '../../composables/useProctoring'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,7 +92,17 @@ const answers = ref({})
 const loading = ref(true)
 const submitting = ref(false)
 const timeRemaining = ref(0)
+const proctoringActive = ref(false)
 let timer = null
+
+const {
+  cameraActive,
+  cameraError,
+  videoEl,
+  eventCount,
+  start: startProctoring,
+  stop: stopProctoring,
+} = useProctoring()
 
 onMounted(async () => {
   try {
@@ -86,6 +112,9 @@ onMounted(async () => {
     questions.value = response.data.questions
     timeRemaining.value = examPaper.value.total_time * 60
     startTimer()
+    // 启动监考采集（切屏/摄像头/闲置/网络恢复）
+    startProctoring(examRecord.value.id)
+    proctoringActive.value = true
   } catch (e) {
     alert('获取考试信息失败', '考试加载失败', 'error')
     router.push('/exams')
@@ -96,6 +125,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  stopProctoring()
 })
 
 const startTimer = () => {
@@ -142,6 +172,9 @@ const submitExam = async () => {
   if (submitting.value) return
   submitting.value = true
   try {
+    // 先停止监考并把缓存的异常事件补报上去，再交卷
+    await stopProctoring()
+    proctoringActive.value = false
     const answerData = Object.entries(answers.value).map(([questionId, answer]) => ({
       question_id: parseInt(questionId),
       answer: Array.isArray(answer) ? answer.join(',') : answer

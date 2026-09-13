@@ -14,19 +14,45 @@
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">试卷</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">得分</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">监考异常</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">考试时间</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
           <tr v-for="record in records" :key="record.id">
             <td class="px-6 py-4 whitespace-nowrap">{{ record.exam_paper?.title }}</td>
-            <td class="px-6 py-4 whitespace-nowrap font-bold" :class="{'text-green-600': record.score >= 60, 'text-red-600': record.score < 60}">{{ record.score }} 分</td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="font-bold" :class="{'text-green-600': Number(record.score) >= 60, 'text-red-600': Number(record.score) < 60}">{{ record.score }} 分</span>
+              <span v-if="Number(record.penalty_score) > 0" class="block text-xs text-red-500">卷面 {{ record.original_score }}，扣 {{ record.penalty_score }} 分</span>
+            </td>
             <td class="px-6 py-4 whitespace-nowrap">
               <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                 {{ record.status === 'graded' ? '已评分' : record.status }}
               </span>
             </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <template v-if="record.proctoring_events_count > 0">
+                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                  {{ record.proctoring_events_count }} 条异常
+                </span>
+                <span v-if="record.pending_appeals_count > 0" class="ml-1 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                  申诉中
+                </span>
+              </template>
+              <span v-else class="text-xs text-gray-400">无</span>
+            </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ new Date(record.created_at).toLocaleString() }}</td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <router-link
+                v-if="record.proctoring_events_count > 0"
+                :to="`/records/${record.id}/proctoring`"
+                class="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+              >
+                监考回放
+              </router-link>
+              <span v-else class="text-xs text-gray-300">-</span>
+            </td>
           </tr>
         </tbody>
       </table>
